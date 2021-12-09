@@ -1,77 +1,47 @@
-import Data.Char (chr, ord)
-import Data.List (intersect, sort)
-import Debug.Trace (trace)
+import Data.Char (ord)
+import Data.List (nub, sort, transpose)
 
-splitOn :: Eq a => a -> [a] -> [[a]]
-splitOn _ [] = []
-splitOn c s = h : splitOn c t
+windowThree :: [Int] -> [[Int]]
+windowThree [] = []
+windowThree x = filter (\x -> length x == 3) $ take 3 x : windowThree (tail x)
+
+greaterThanPrevAndNext :: [Int] -> [Bool]
+greaterThanPrevAndNext x =
+  map (\x -> head (tail x) < head x && head (tail x) < last x) $ windowThree (10 : x ++ [10])
+
+heatMap :: [[Int]] -> [[Bool]]
+heatMap x = map (map (uncurry (&&))) $ zipWith zip hm hmTrans
   where
-    h = takeWhile (/= c) s
-    t = dropWhile (== c) (dropWhile (/= c) s)
+    hm = map greaterThanPrevAndNext x
+    hmTrans = transpose (map greaterThanPrevAndNext (transpose x))
 
-count :: Eq a => a -> [a] -> Int
-count c x = length $ filter (== c) x
+indices :: [[a]] -> [[(Int, Int)]]
+indices x = [[(i, j) | j <- [0 .. length (head x) - 1]] | i <- [0 .. length x - 1]]
 
-countSum :: Eq a => a -> [[a]] -> Int
-countSum c x = sum $ map (count c) x
+getLowPoints :: [[Int]] -> [(Int, Int)]
+getLowPoints graph = concatMap (map fst . filter snd) $ zipWith zip (indices graph) (heatMap graph)
 
-isCap :: Char -> Bool
-isCap x = a >= 65 && a <= 90
+get :: Int -> Int -> [[Int]] -> Int
+get x y l
+  | isWithinBounds x y l = l !! x !! y
+  | otherwise = 10
+
+isWithinBounds :: Int -> Int -> [[Int]] -> Bool
+isWithinBounds x y l = x >= 0 && x < length l && y >= 0 && y < length (head l)
+
+getNeighboursMoreThanSelf :: Int -> Int -> [[Int]] -> [(Int, Int)]
+getNeighboursMoreThanSelf x y graph = filter (\(x1, y1) -> isWithinBounds x1 y1 graph && get x y graph < get x1 y1 graph && get x1 y1 graph /= 9) [(x, y + 1), (x, y - 1), (x + 1, y), (x - 1, y)]
+
+dfs :: Int -> Int -> [[Int]] -> [(Int, Int)] -> [(Int, Int)]
+dfs x y graph visited = if null neighbours then nub $ (x, y) : visited else nub $ (x, y) : concatMap (\(x, y) -> dfs x y graph visited) neighbours
   where
-    a = ord x
+    neighbours = getNeighboursMoreThanSelf x y graph
 
-listIntToInt :: [Int] -> Int
-listIntToInt = foldl (\num digit -> digit + (num * 10)) 0
-
-decodeAndSort :: ([String], [String]) -> [String]
-decodeAndSort (x, y) = map (map chr . sort . map ord) $ drop 10 warped
-  where
-    cs = zip (map (`countSum` x) ['a' .. 'g']) ['a' .. 'g']
-    -- BEF uniquely occurs a said number of times across all 10 digits
-    warpedBEF =
-      map
-        ( map
-            ( \x ->
-                case fst $ cs !! (ord x - ord 'a') of
-                  4 -> 'E'
-                  6 -> 'B'
-                  9 -> 'F'
-                  _ -> x
-            )
-        )
-        (x ++ y)
-    -- the other non-F character in 1 (which is length 2) is C
-    getC = head $ filter (/= 'F') $ head $ filter (\x -> length x == 2) (take 10 warpedBEF)
-    -- A and C occur 8 times across all 10 numbers so the 8 which is not C must be A
-    getA = snd $ head $ filter (\(x, y) -> x == 8 && y /= getC) cs
-    --- warping to add A and C
-    warpedABCEF = map (map (\x -> if x == getC then 'C' else if x == getA then 'A' else x)) warpedBEF
-    -- D is the only letter so far that occurs in 4 that hasn't been decoded
-    getD = head $ filter (not . isCap) $ head $ filter (\x -> length x == 4) (take 10 warpedABCEF)
-    warpedABCDEF = map (map (\x -> if x == getD then 'D' else x)) warpedABCEF
-    -- G is the only letter left, take from 8 which has all the letters
-    getG = head $ filter (not . isCap) $ head $ filter (\x -> length x == 7) (take 10 warpedABCDEF)
-    warped = map (map (\x -> if x == getG then 'G' else x)) warpedABCDEF
-
-sevenStringToInt :: String -> Int
-sevenStringToInt x
-  | x == "ABCEFG" = 0
-  | x == "CF" = 1
-  | x == "ACDEG" = 2
-  | x == "ACDFG" = 3
-  | x == "BCDF" = 4
-  | x == "ABDFG" = 5
-  | x == "ABDEFG" = 6
-  | x == "ACF" = 7
-  | x == "ABCDEFG" = 8
-  | x == "ABCDFG" = 9
-  | otherwise = -1
-
-f :: [([String], [String])] -> Int
-f = sum . map ((listIntToInt . map sevenStringToInt) . decodeAndSort)
+f :: [[Int]] -> Int
+f graph = product $ take 3 $ reverse $ sort $ map (\(x, y) -> length $ dfs x y graph []) (getLowPoints graph)
 
 main :: IO ()
 main = do
   file <- getContents
-  let arr = map ((\x -> (head x, last x)) . map words . splitOn '|') (lines file)
-  print (f arr)
+  let graph = map (map (abs . (-) 48 . ord)) (lines file)
+  print (f graph)
