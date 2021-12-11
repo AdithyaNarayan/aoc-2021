@@ -1,4 +1,4 @@
-let maybe_read_line () = try Some(read_line()) with End_of_file -> None ;;
+let maybe_read_line () = try Some(read_line()) with End_of_file -> None
 
 let read_all () =
   let rec f acc =
